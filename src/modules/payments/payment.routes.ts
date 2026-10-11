@@ -7,7 +7,7 @@ import {
   getPaymentParamsSchema,
 } from './payment.validation.js';
 
-const router = Router();
+const router: Router = Router();
 
 router.post(
   '/',

@@ -1,9 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import type { Request, Response, NextFunction } from 'express';
 
-declare module 'express-serve-static-core' {
-  interface Request {
-    id: string;
+declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace Express {
+    interface Request {
+      id: string;
+    }
   }
 }
 
