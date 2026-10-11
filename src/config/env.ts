@@ -15,6 +15,26 @@ export const envSchema = z.object({
     ),
   FRONTEND_URL: z.url('Invalid FRONTEND_URL').default('http://localhost:3000'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  BKASH_MERCHANT_NUMBER: z
+    .string()
+    .trim()
+    .regex(/^01[3-9]\d{8}$/, 'BKASH_MERCHANT_NUMBER must be a valid 11-digit Bangladeshi mobile number')
+    .default('01960515811'),
+  MERCHANT_NAME: z
+    .string()
+    .trim()
+    .min(1, 'MERCHANT_NAME cannot be empty')
+    .max(100)
+    .default('Micro-Shop BD'),
+  MERCHANT_LOGO_URL: z
+    .string()
+    .trim()
+    .min(1, 'MERCHANT_LOGO_URL cannot be empty')
+    .default('/logo.png'),
+  ADMIN_API_KEY: z
+    .string()
+    .min(16, 'ADMIN_API_KEY must be at least 16 characters long')
+    .default('dev-admin-secret-key-change-in-prod'),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -31,6 +51,15 @@ export function parseEnv(source: Record<string, string | undefined>): Env {
       .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
       .join('; ');
     throw new Error(`Invalid environment configuration — ${issues}`);
+  }
+
+  if (
+    result.data.NODE_ENV === 'production' &&
+    result.data.ADMIN_API_KEY === 'dev-admin-secret-key-change-in-prod'
+  ) {
+    throw new Error(
+      'Invalid environment configuration — ADMIN_API_KEY: A strong custom ADMIN_API_KEY is required in production',
+    );
   }
 
   return result.data;

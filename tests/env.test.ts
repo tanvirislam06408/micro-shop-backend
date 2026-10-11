@@ -11,6 +11,8 @@ describe('Environment Configuration Validation', () => {
     expect(parsed.PORT).toBe(5000);
     expect(parsed.FRONTEND_URL).toBe('http://localhost:3000');
     expect(parsed.LOG_LEVEL).toBe('info');
+    expect(parsed.BKASH_MERCHANT_NUMBER).toBe('01960515811');
+    expect(parsed.MERCHANT_NAME).toBe('Micro-Shop BD');
     expect(parsed.DATABASE_URL).toBe(
       'postgresql://user:pass@localhost:5432/micro_shop_test',
     );
@@ -49,5 +51,23 @@ describe('Environment Configuration Validation', () => {
         FRONTEND_URL: 'not-a-valid-url',
       }),
     ).toThrow(/FRONTEND_URL/i);
+  });
+
+  it('fails when BKASH_MERCHANT_NUMBER is invalid', () => {
+    expect(() =>
+      parseEnv({
+        DATABASE_URL: 'postgresql://user:pass@localhost:5432/micro_shop_test',
+        BKASH_MERCHANT_NUMBER: '12345',
+      }),
+    ).toThrow(/BKASH_MERCHANT_NUMBER/i);
+  });
+
+  it('requires a custom ADMIN_API_KEY in production', () => {
+    expect(() =>
+      parseEnv({
+        NODE_ENV: 'production',
+        DATABASE_URL: 'postgresql://user:pass@localhost:5432/micro_shop_prod',
+      }),
+    ).toThrow(/ADMIN_API_KEY/i);
   });
 });
