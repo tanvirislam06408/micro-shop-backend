@@ -1,0 +1,48 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Payment statuses for manual bKash payment workflow.
+/// Payments start as `pending`, then an administrator manually verifies or rejects.
+enum PaymentStatus {
+  pending
+  verified
+  rejected
+}
+
+enum PaymentMethod {
+  manual_bkash
+}
+
+/// Represents a manual bKash payment submission.
+/// The customer sends money via bKash and submits the transaction ID.
+/// An authorized administrator must manually verify the payment by
+/// checking the merchant bKash account before changing status.
+model Payment {
+  id              String        @id @default(cuid())
+  /// Amount in BDT (Bangladeshi Taka). Always determined server-side, never trusted from the client.
+  amount          Decimal       @db.Decimal(12, 2)
+  /// Currency code — always BDT for bKash payments.
+  currency        String        @default("BDT") @db.VarChar(3)
+  /// bKash transaction ID (TrxID) submitted by the customer.
+  /// Normalized to uppercase alphanumeric, unique to prevent duplicate submissions.
+  transactionId   String        @unique @map("transaction_id") @db.VarChar(20)
+  method          PaymentMethod @default(manual_bkash)
+  status          PaymentStatus @default(pending)
+  /// Optional notes from admin during verification or rejection.
+  adminNote       String?       @map("admin_note")
+  /// Phone number the customer paid from (optional, for reference).
+  payerPhone      String?       @map("payer_phone") @db.VarChar(20)
+
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("payments")
+}
