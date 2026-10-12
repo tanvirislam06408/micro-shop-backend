@@ -20,6 +20,11 @@ export const envSchema = z.object({
     .trim()
     .regex(/^01[3-9]\d{8}$/, 'BKASH_MERCHANT_NUMBER must be a valid 11-digit Bangladeshi mobile number')
     .default('01960515811'),
+  NAGAD_MERCHANT_NUMBER: z
+    .string()
+    .trim()
+    .regex(/^01[3-9]\d{8}$/, 'NAGAD_MERCHANT_NUMBER must be a valid 11-digit Bangladeshi mobile number')
+    .default('01922458412'),
   MERCHANT_NAME: z
     .string()
     .trim()

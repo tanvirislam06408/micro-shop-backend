@@ -1,28 +1,37 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { prisma } from '../../lib/prisma.js';
 import { env } from '../../config/env.js';
-import { resolveProductPricing } from '../../config/catalog.js';
+import { resolveLiveProductForOrder } from '../products/product.service.js';
 import { ApiError } from '../../utils/api-error.js';
 import { safeCompareStrings } from '../../middleware/auth.js';
 import type { CreateOrderInput } from './order.validation.js';
 
+export type ManualPaymentMethod = 'manual_bkash' | 'manual_nagad';
+
 export interface PublicMerchantConfig {
   merchantName: string;
   merchantNumber: string;
+  bkashNumber: string;
+  nagadNumber: string;
   merchantLogoUrl: string;
   currency: 'BDT';
-  method: 'manual_bkash';
-  dialCode: '*247#';
+  method: ManualPaymentMethod;
+  dialCode: '*247#' | '*167#';
 }
 
-export function getPublicMerchantConfig(): PublicMerchantConfig {
+export function getPublicMerchantConfig(
+  method: ManualPaymentMethod = 'manual_bkash',
+): PublicMerchantConfig {
+  const isNagad = method === 'manual_nagad';
   return {
     merchantName: env.MERCHANT_NAME,
-    merchantNumber: env.BKASH_MERCHANT_NUMBER,
+    merchantNumber: isNagad ? env.NAGAD_MERCHANT_NUMBER : env.BKASH_MERCHANT_NUMBER,
+    bkashNumber: env.BKASH_MERCHANT_NUMBER,
+    nagadNumber: env.NAGAD_MERCHANT_NUMBER,
     merchantLogoUrl: env.MERCHANT_LOGO_URL,
     currency: 'BDT',
-    method: 'manual_bkash',
-    dialCode: '*247#',
+    method,
+    dialCode: isNagad ? '*167#' : '*247#',
   };
 }
 
@@ -46,10 +55,15 @@ export async function createOrder(
   input: CreateOrderInput,
   headerCustomerId?: string,
 ) {
-  const pricing = resolveProductPricing(input.productId, input.planName);
+  const pricing = await resolveLiveProductForOrder(
+    input.productId,
+    input.planName,
+  );
   const customerId =
     headerCustomerId || input.customerId || `cust_${randomUUID()}`;
   const orderToken = randomBytes(24).toString('hex');
+  const paymentMethod: ManualPaymentMethod =
+    input.paymentMethod ?? 'manual_bkash';
 
   const normalizedPhone = input.customerPhone.replace(/^\+?88/, '');
 
@@ -65,9 +79,13 @@ export async function createOrder(
       planName: pricing.planName,
       amount: pricing.amount,
       currency: pricing.currency,
+      paymentMethod,
       status: 'pending_payment',
     },
   });
+
+  const resolvedMethod: ManualPaymentMethod =
+    order.paymentMethod === 'manual_nagad' ? 'manual_nagad' : paymentMethod;
 
   return {
     id: order.id,
@@ -81,9 +99,10 @@ export async function createOrder(
     planName: order.planName,
     amount: order.amount.toFixed(2),
     currency: order.currency,
+    paymentMethod: resolvedMethod,
     status: order.status,
     createdAt: order.createdAt,
-    merchant: getPublicMerchantConfig(),
+    merchant: getPublicMerchantConfig(resolvedMethod),
   };
 }
 
@@ -108,6 +127,11 @@ export async function getOrderForCustomer(
   verifyOrderOwnership(order, auth);
 
   const latestPayment = order.payments?.[0] ?? null;
+  const resolvedMethod: ManualPaymentMethod =
+    latestPayment?.method === 'manual_nagad' ||
+    order.paymentMethod === 'manual_nagad'
+      ? 'manual_nagad'
+      : 'manual_bkash';
 
   return {
     id: order.id,
@@ -120,6 +144,7 @@ export async function getOrderForCustomer(
     planName: order.planName,
     amount: order.amount.toFixed(2),
     currency: order.currency,
+    paymentMethod: resolvedMethod,
     status: order.status,
     paidAt: order.paidAt,
     createdAt: order.createdAt,
@@ -137,6 +162,6 @@ export async function getOrderForCustomer(
           createdAt: latestPayment.createdAt,
         }
       : null,
-    merchant: getPublicMerchantConfig(),
+    merchant: getPublicMerchantConfig(resolvedMethod),
   };
 }

@@ -10,6 +10,8 @@ import { healthRoutes } from './modules/health/health.routes.js';
 import { orderRoutes } from './modules/orders/order.routes.js';
 import { paymentRoutes } from './modules/payments/payment.routes.js';
 import { adminPaymentRoutes } from './modules/payments/admin-payment.routes.js';
+import { productRoutes } from './modules/products/product.routes.js';
+import { adminProductRoutes } from './modules/products/admin-product.routes.js';
 
 const app: Express = express();
 
@@ -54,9 +56,11 @@ app.get('/', (_req, res) => {
 
 // --- API Routes ---
 app.use('/api/v1/health', healthRoutes);
+app.use('/api/v1/products', productRoutes);
 app.use('/api/v1/orders', orderRoutes);
 app.use('/api/v1/payments', paymentRoutes);
 app.use('/api/v1/admin/payments', adminPaymentRoutes);
+app.use('/api/v1/admin/products', adminProductRoutes);
 
 // --- 404 and error handling ---
 app.use(notFound);

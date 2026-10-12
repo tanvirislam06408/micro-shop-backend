@@ -26,30 +26,48 @@ enum PaymentStatus {
 
 enum PaymentMethod {
   manual_bkash
+  manual_nagad
+}
+
+/// Authoritative server-side product record controlled via Admin Dashboard.
+model Product {
+  id          String   @id @db.VarChar(100)
+  name        String   @db.VarChar(255)
+  description String
+  defaultPlan String   @map("default_plan") @db.VarChar(255)
+  amountBdt   Decimal  @map("amount_bdt") @db.Decimal(12, 2)
+  oldPriceBdt Decimal? @map("old_price_bdt") @db.Decimal(12, 2)
+  inStock     Boolean  @default(true) @map("in_stock")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([inStock])
+  @@map("products")
 }
 
 /// Represents a customer order for a digital product/subscription.
 /// Payable amount is always calculated on the server from the trusted product catalog.
 model Order {
-  id            String      @id @default(cuid())
+  id            String        @id @default(cuid())
   /// Customer identifier (authenticated customer ID or generated session customer ID)
-  customerId    String      @map("customer_id") @db.VarChar(100)
+  customerId    String        @map("customer_id") @db.VarChar(100)
   /// Secret token issued to the customer on order creation to verify order ownership
-  orderToken    String      @map("order_token") @db.VarChar(100)
-  customerEmail String      @map("customer_email") @db.VarChar(255)
-  customerPhone String      @map("customer_phone") @db.VarChar(30)
-  customerNote  String?     @map("customer_note")
-  productId     String      @map("product_id") @db.VarChar(100)
-  productName   String      @map("product_name") @db.VarChar(255)
-  planName      String      @map("plan_name") @db.VarChar(255)
+  orderToken    String        @map("order_token") @db.VarChar(100)
+  customerEmail String        @map("customer_email") @db.VarChar(255)
+  customerPhone String        @map("customer_phone") @db.VarChar(30)
+  customerNote  String?       @map("customer_note")
+  productId     String        @map("product_id") @db.VarChar(100)
+  productName   String        @map("product_name") @db.VarChar(255)
+  planName      String        @map("plan_name") @db.VarChar(255)
   /// Authoritative payable amount in BDT calculated server-side
-  amount        Decimal     @db.Decimal(12, 2)
-  currency      String      @default("BDT") @db.VarChar(3)
-  status        OrderStatus @default(pending_payment)
-  paidAt        DateTime?   @map("paid_at")
+  amount        Decimal       @db.Decimal(12, 2)
+  currency      String        @default("BDT") @db.VarChar(3)
+  paymentMethod PaymentMethod @default(manual_bkash) @map("payment_method")
+  status        OrderStatus   @default(pending_payment)
+  paidAt        DateTime?     @map("paid_at")
 
-  createdAt     DateTime    @default(now()) @map("created_at")
-  updatedAt     DateTime    @updatedAt @map("updated_at")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
 
   payments      Payment[]
 

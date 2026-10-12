@@ -47,6 +47,7 @@ export const submitPaymentSchema = z
       .trim()
       .regex(/^01[3-9]\d{8}$/, 'Invalid Bangladeshi mobile number format')
       .optional(),
+    method: z.enum(['manual_bkash', 'manual_nagad']).optional(),
   })
   .strict();
 
@@ -56,6 +57,7 @@ export const getPaymentParamsSchema = z.object({
 
 export const adminListPaymentsQuerySchema = z.object({
   status: z.enum(['pending', 'verified', 'rejected']).optional(),
+  method: z.enum(['manual_bkash', 'manual_nagad']).optional(),
 });
 
 export const adminVerifyPaymentBodySchema = z

@@ -87,6 +87,10 @@ export async function submitPayment(
       );
     }
 
+    const resolvedMethod =
+      input.method ??
+      (order.paymentMethod === 'manual_nagad' ? 'manual_nagad' : 'manual_bkash');
+
     try {
       const executeOrderPayment = async (tx: typeof prisma) => {
         const createdPayment = await tx.payment.create({
@@ -96,7 +100,7 @@ export async function submitPayment(
             amount: order.amount,
             currency: 'BDT',
             transactionId: normalizedTrxId,
-            method: 'manual_bkash',
+            method: resolvedMethod,
             status: 'pending',
             payerPhone: input.payerPhone ?? order.customerPhone ?? null,
           },
@@ -106,6 +110,7 @@ export async function submitPayment(
           where: { id: order.id },
           data: {
             status: 'payment_submitted',
+            ...(input.method ? { paymentMethod: input.method } : {}),
           },
         });
 
@@ -151,7 +156,7 @@ export async function submitPayment(
         amount: resolveServerSideAmount(),
         currency: 'BDT',
         transactionId: normalizedTrxId,
-        method: 'manual_bkash',
+        method: input.method ?? 'manual_bkash',
         status: 'pending',
         payerPhone: input.payerPhone ?? null,
       },
@@ -216,7 +221,10 @@ export async function getPaymentById(id: string, auth?: CustomerAuthContext) {
 }
 
 export async function listPaymentsForAdmin(query: AdminListPaymentsQuery) {
-  const where = query.status ? { status: query.status } : {};
+  const where: Prisma.PaymentWhereInput = {
+    ...(query.status ? { status: query.status } : {}),
+    ...(query.method ? { method: query.method } : {}),
+  };
 
   const payments = await prisma.payment.findMany({
     where,

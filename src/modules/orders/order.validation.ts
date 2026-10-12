@@ -36,6 +36,9 @@ export const createOrderSchema = z
       .min(3)
       .max(100)
       .optional(),
+    paymentMethod: z
+      .enum(['manual_bkash', 'manual_nagad'])
+      .optional(),
   })
   .strict();
 

@@ -11,6 +11,11 @@ const mockPaymentUpdate = vi.fn();
 const mockOrderFindUnique = vi.fn();
 const mockOrderCreate = vi.fn();
 const mockOrderUpdate = vi.fn();
+const mockProductFindUnique = vi.fn();
+const mockProductFindMany = vi.fn();
+const mockProductCreate = vi.fn();
+const mockProductCreateMany = vi.fn();
+const mockProductUpdate = vi.fn();
 
 vi.mock('../src/lib/prisma.js', () => {
   const client = {
@@ -26,6 +31,13 @@ vi.mock('../src/lib/prisma.js', () => {
       findUnique: (...args: unknown[]) => mockOrderFindUnique(...args),
       create: (...args: unknown[]) => mockOrderCreate(...args),
       update: (...args: unknown[]) => mockOrderUpdate(...args),
+    },
+    product: {
+      findUnique: (...args: unknown[]) => mockProductFindUnique(...args),
+      findMany: (...args: unknown[]) => mockProductFindMany(...args),
+      create: (...args: unknown[]) => mockProductCreate(...args),
+      createMany: (...args: unknown[]) => mockProductCreateMany(...args),
+      update: (...args: unknown[]) => mockProductUpdate(...args),
     },
   };
   return { prisma: client };
@@ -623,6 +635,159 @@ describe('API Endpoints, Security, Manual bKash Workflow & Admin Verification', 
 
       expect(res.status).toBe(409);
       expect(mockPaymentUpdate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Nagad Workflow & Admin Product Stock/Price/Description Management', () => {
+    it('creates a manual_nagad order and submits a manual_nagad payment', async () => {
+      const now = new Date();
+      mockProductFindUnique.mockResolvedValueOnce({
+        id: 'gemini-ai-pro',
+        name: 'Gemini AI Pro',
+        description: 'Gemini Pro 18M',
+        defaultPlan: '18 Months Validity',
+        amountBdt: new Prisma.Decimal('350.00'),
+        oldPriceBdt: new Prisma.Decimal('1500.00'),
+        inStock: true,
+        updatedAt: now,
+      });
+
+      mockOrderCreate.mockImplementationOnce(async ({ data }: { data: Record<string, unknown> }) => ({
+        id: 'ord_nagad_1',
+        ...data,
+        paidAt: null,
+        createdAt: now,
+        updatedAt: now,
+      }));
+
+      const orderRes = await request(app)
+        .post('/api/v1/orders')
+        .set('X-Customer-Id', 'cust_nagad_1')
+        .send({
+          productId: 'gemini-ai-pro',
+          customerEmail: 'nagad@example.com',
+          customerPhone: '01911223344',
+          paymentMethod: 'manual_nagad',
+        });
+
+      expect(orderRes.status).toBe(201);
+      expect(orderRes.body.data.paymentMethod).toBe('manual_nagad');
+      expect(orderRes.body.data.merchant).toMatchObject({
+        method: 'manual_nagad',
+        dialCode: '*167#',
+        merchantNumber: env.NAGAD_MERCHANT_NUMBER,
+      });
+
+      mockPaymentFindUnique.mockResolvedValueOnce(null);
+      mockOrderFindUnique.mockResolvedValueOnce({
+        id: 'ord_nagad_1',
+        customerId: 'cust_nagad_1',
+        orderToken: orderRes.body.data.orderToken,
+        customerPhone: '01911223344',
+        amount: new Prisma.Decimal('350.00'),
+        currency: 'BDT',
+        paymentMethod: 'manual_nagad',
+        status: 'pending_payment',
+        payments: [],
+      });
+
+      mockPaymentCreate.mockResolvedValueOnce({
+        id: 'pay_nagad_1',
+        orderId: 'ord_nagad_1',
+        customerId: 'cust_nagad_1',
+        amount: new Prisma.Decimal('350.00'),
+        currency: 'BDT',
+        transactionId: 'NG99887766',
+        method: 'manual_nagad',
+        status: 'pending',
+        createdAt: now,
+      });
+
+      mockOrderUpdate.mockResolvedValueOnce({
+        id: 'ord_nagad_1',
+        status: 'payment_submitted',
+        paymentMethod: 'manual_nagad',
+      });
+
+      const payRes = await request(app)
+        .post('/api/v1/payments')
+        .set('X-Order-Token', orderRes.body.data.orderToken)
+        .send({
+          orderId: 'ord_nagad_1',
+          transactionId: 'ng99887766',
+          method: 'manual_nagad',
+        });
+
+      expect(payRes.status).toBe(201);
+      expect(payRes.body.data.method).toBe('manual_nagad');
+      expect(payRes.body.data.transactionId).toBe('NG99887766');
+    });
+
+    it('blocks order creation when product is marked Stock Out (inStock: false)', async () => {
+      mockProductFindUnique.mockResolvedValueOnce({
+        id: 'gemini-ai-pro',
+        name: 'Gemini AI Pro',
+        description: 'Gemini Pro',
+        defaultPlan: '18 Months Validity',
+        amountBdt: new Prisma.Decimal('350.00'),
+        oldPriceBdt: null,
+        inStock: false,
+      });
+
+      const res = await request(app)
+        .post('/api/v1/orders')
+        .send({
+          productId: 'gemini-ai-pro',
+          customerEmail: 'buyer@example.com',
+          customerPhone: '01712345678',
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.message).toMatch(/out of stock/i);
+      expect(mockOrderCreate).not.toHaveBeenCalled();
+    });
+
+    it('allows admin to update product inStock status, price, and description via PATCH /api/v1/admin/products/:id', async () => {
+      const now = new Date();
+      mockProductFindUnique.mockResolvedValueOnce({
+        id: 'capcut-pro',
+        name: 'CapCut Pro',
+        description: 'Old description',
+        defaultPlan: '1 Month Validity',
+        amountBdt: new Prisma.Decimal('250.00'),
+        oldPriceBdt: new Prisma.Decimal('800.00'),
+        inStock: true,
+        updatedAt: now,
+      });
+
+      mockProductUpdate.mockResolvedValueOnce({
+        id: 'capcut-pro',
+        name: 'CapCut Pro',
+        description: 'Updated Pro video editing with 4K 60fps',
+        defaultPlan: '1 Month Validity',
+        amountBdt: new Prisma.Decimal('290.00'),
+        oldPriceBdt: new Prisma.Decimal('800.00'),
+        inStock: false,
+        updatedAt: now,
+      });
+
+      const res = await request(app)
+        .patch('/api/v1/admin/products/capcut-pro')
+        .set('X-Admin-Key', env.ADMIN_API_KEY)
+        .send({
+          inStock: false,
+          amountBdt: 290,
+          description: 'Updated Pro video editing with 4K 60fps',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toMatchObject({
+        id: 'capcut-pro',
+        amountBdt: '290.00',
+        description: 'Updated Pro video editing with 4K 60fps',
+        inStock: false,
+      });
     });
   });
 
