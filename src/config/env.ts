@@ -40,6 +40,8 @@ export const envSchema = z.object({
     .string()
     .min(16, 'ADMIN_API_KEY must be at least 16 characters long')
     .default('dev-admin-secret-key-change-in-prod'),
+  TELEGRAM_BOT_TOKEN: z.string().trim().optional(),
+  TELEGRAM_CHAT_ID: z.string().trim().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

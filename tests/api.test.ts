@@ -45,6 +45,10 @@ vi.mock('../src/lib/prisma.js', () => {
 
 import { app } from '../src/app.js';
 import { env } from '../src/config/env.js';
+import {
+  formatOrderTelegramMessage,
+  sendOrderTelegramNotification,
+} from '../src/lib/telegram.js';
 import { ApiError } from '../src/utils/api-error.js';
 import {
   errorHandler,
@@ -52,9 +56,19 @@ import {
 } from '../src/middleware/error-handler.js';
 import { requestId } from '../src/middleware/request-id.js';
 
+const mockFetch = vi.fn();
+
 describe('API Endpoints, Security, Manual bKash Workflow & Admin Verification', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.TELEGRAM_BOT_TOKEN = env.TELEGRAM_BOT_TOKEN ?? '123456789:mock_token';
+    process.env.TELEGRAM_CHAT_ID = env.TELEGRAM_CHAT_ID ?? 'mock_chat_id';
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, result: { message_id: 101 } }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
   });
 
   describe('GET /api/v1/health', () => {
@@ -840,6 +854,185 @@ describe('API Endpoints, Security, Manual bKash Workflow & Admin Verification', 
       expect(redacted).not.toContain('12345');
       expect(redacted).not.toContain('999888');
       expect(redacted).toContain('[REDACTED]');
+    });
+  });
+
+  describe('Telegram Order Notifications', () => {
+    it('delivers a formatted Telegram notification once when a new order is created and never includes orderToken', async () => {
+      const now = new Date('2026-10-13T03:30:00.000Z');
+      mockOrderCreate.mockImplementationOnce(async ({ data }: { data: Record<string, unknown> }) => ({
+        id: 'ord_tg_success_1',
+        ...data,
+        paidAt: null,
+        createdAt: now,
+        updatedAt: now,
+      }));
+
+      const res = await request(app)
+        .post('/api/v1/orders')
+        .set('X-Customer-Id', 'cust_tg_1')
+        .send({
+          productId: 'gemini-ai-pro',
+          customerEmail: 'customer@example.com',
+          customerPhone: '01712345678',
+          customerNote: 'Deliver on WhatsApp',
+        });
+
+      expect(res.status).toBe(201);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+
+      const activeToken = process.env.TELEGRAM_BOT_TOKEN!;
+      const activeChatId = process.env.TELEGRAM_CHAT_ID!;
+
+      const [calledUrl, requestInit] = mockFetch.mock.calls[0] as [
+        string,
+        RequestInit,
+      ];
+      expect(calledUrl).toBe(
+        `https://api.telegram.org/bot${activeToken}/sendMessage`,
+      );
+      expect(requestInit.method).toBe('POST');
+
+      const parsedBody = JSON.parse(String(requestInit.body)) as {
+        chat_id: string;
+        text: string;
+      };
+      expect(parsedBody.chat_id).toBe(activeChatId);
+      expect(parsedBody.text).toContain('NEW ORDER — MicroBD.shop');
+      expect(parsedBody.text).toContain('Order ID: ord_tg_success_1');
+      expect(parsedBody.text).toContain('Customer ID: cust_tg_1');
+      expect(parsedBody.text).toContain('Customer Email: customer@example.com');
+      expect(parsedBody.text).toContain('Customer Phone: 01712345678');
+      expect(parsedBody.text).toContain('Customer Note: Deliver on WhatsApp');
+      expect(parsedBody.text).toContain('Product: Gemini AI Pro (gemini-ai-pro)');
+      expect(parsedBody.text).toContain('Plan: 18 Months Validity');
+      expect(parsedBody.text).toContain('Total Amount: 350.00 BDT');
+      expect(parsedBody.text).toContain('Payment Method: manual_bkash');
+      expect(parsedBody.text).toContain('Payment Status: pending_payment');
+      expect(parsedBody.text).toContain('Created At: 2026-10-13T03:30:00.000Z');
+      expect(parsedBody.text).not.toContain(res.body.data.orderToken);
+    });
+
+    it('skips sending and logs a safe error when TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing', async () => {
+      process.env.TELEGRAM_BOT_TOKEN = '';
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const result = await sendOrderTelegramNotification({
+        id: 'ord_missing_cfg',
+        customerId: 'cust_1',
+        customerEmail: 'user@example.com',
+        customerPhone: '01712345678',
+        productId: 'gemini-ai-pro',
+        productName: 'Gemini AI Pro',
+        planName: '18 Months Validity',
+        amount: '350.00',
+        currency: 'BDT',
+        paymentMethod: 'manual_bkash',
+        status: 'pending_payment',
+        createdAt: new Date('2026-10-13T03:30:00.000Z'),
+      });
+
+      expect(result).toEqual({ sent: false, reason: 'missing_config' });
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+
+      errorSpy.mockRestore();
+    });
+
+    it('handles Telegram API errors without throwing or leaking the bot token', async () => {
+      const activeToken = process.env.TELEGRAM_BOT_TOKEN!;
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({
+          ok: false,
+          description: 'Unauthorized',
+        }),
+      });
+
+      const result = await sendOrderTelegramNotification({
+        id: 'ord_api_fail',
+        customerId: 'cust_1',
+        customerEmail: 'user@example.com',
+        customerPhone: '01712345678',
+        productId: 'gemini-ai-pro',
+        productName: 'Gemini AI Pro',
+        planName: '18 Months Validity',
+        amount: '350.00',
+        currency: 'BDT',
+        paymentMethod: 'manual_bkash',
+        status: 'pending_payment',
+        createdAt: new Date('2026-10-13T03:30:00.000Z'),
+      });
+
+      expect(result).toEqual({ sent: false, reason: 'api_error' });
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      const loggedOutput = String(errorSpy.mock.calls[0]?.[0]);
+      expect(loggedOutput).toContain('HTTP 401: Unauthorized');
+      expect(loggedOutput).not.toContain(activeToken);
+
+      errorSpy.mockRestore();
+    });
+
+    it('still succeeds in creating the customer order when Telegram network delivery fails', async () => {
+      const activeToken = process.env.TELEGRAM_BOT_TOKEN!;
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const now = new Date('2026-10-13T04:00:00.000Z');
+      mockOrderCreate.mockImplementationOnce(async ({ data }: { data: Record<string, unknown> }) => ({
+        id: 'ord_tg_netfail_1',
+        ...data,
+        paidAt: null,
+        createdAt: now,
+        updatedAt: now,
+      }));
+
+      mockFetch.mockRejectedValueOnce(
+        new Error(
+          `request to https://api.telegram.org/bot${activeToken}/sendMessage failed: ECONNRESET`,
+        ),
+      );
+
+      const res = await request(app)
+        .post('/api/v1/orders')
+        .set('X-Customer-Id', 'cust_resilient_1')
+        .send({
+          productId: 'gemini-ai-pro',
+          customerEmail: 'resilient@example.com',
+          customerPhone: '01712345678',
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.id).toBe('ord_tg_netfail_1');
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      const loggedOutput = String(errorSpy.mock.calls[0]?.[0]);
+      expect(loggedOutput).not.toContain(activeToken);
+      expect(loggedOutput).toContain('[REDACTED]');
+
+      errorSpy.mockRestore();
+    });
+
+    it('formats order message cleanly when optional customerNote is absent', () => {
+      const text = formatOrderTelegramMessage({
+        id: 'ord_fmt_1',
+        customerId: 'cust_fmt_1',
+        customerEmail: 'fmt@example.com',
+        customerPhone: '01812345678',
+        customerNote: null,
+        productId: 'capcut-pro',
+        productName: 'CapCut Pro',
+        planName: '1 Month Validity',
+        amount: '250.00',
+        currency: 'BDT',
+        paymentMethod: 'manual_nagad',
+        status: 'pending_payment',
+        createdAt: '2026-10-13T04:15:00.000Z',
+      });
+
+      expect(text).toContain('NEW ORDER — MicroBD.shop');
+      expect(text).not.toContain('Customer Note:');
+      expect(text).toContain('Payment Method: manual_nagad');
     });
   });
 });

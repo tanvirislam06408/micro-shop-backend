@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { prisma } from '../../lib/prisma.js';
 import { env } from '../../config/env.js';
+import { sendOrderTelegramNotification } from '../../lib/telegram.js';
 import { resolveLiveProductForOrder } from '../products/product.service.js';
 import { ApiError } from '../../utils/api-error.js';
 import { safeCompareStrings } from '../../middleware/auth.js';
@@ -86,6 +87,28 @@ export async function createOrder(
 
   const resolvedMethod: ManualPaymentMethod =
     order.paymentMethod === 'manual_nagad' ? 'manual_nagad' : paymentMethod;
+  const formattedAmount = order.amount.toFixed(2);
+
+  try {
+    await sendOrderTelegramNotification({
+      id: order.id,
+      customerId: order.customerId,
+      customerEmail: order.customerEmail,
+      customerPhone: order.customerPhone,
+      customerNote: order.customerNote,
+      productId: order.productId,
+      productName: order.productName,
+      planName: order.planName,
+      amount: formattedAmount,
+      currency: order.currency,
+      paymentMethod: resolvedMethod,
+      status: order.status,
+      createdAt: order.createdAt,
+    });
+  } catch {
+    // Notification errors are already logged inside sendOrderTelegramNotification
+    // and must never interrupt the customer order response.
+  }
 
   return {
     id: order.id,
@@ -97,7 +120,7 @@ export async function createOrder(
     productId: order.productId,
     productName: order.productName,
     planName: order.planName,
-    amount: order.amount.toFixed(2),
+    amount: formattedAmount,
     currency: order.currency,
     paymentMethod: resolvedMethod,
     status: order.status,

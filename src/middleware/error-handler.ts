@@ -4,7 +4,8 @@ import { env } from '../config/env.js';
 
 const SENSITIVE_PATTERNS = [
   /postgres(?:ql)?:\/\/[^\s"']+/gi,
-  /(password|secret|token|authorization|cookie|pin|otp|admin_api_key|x-admin-key|order_token)\s*[:=]\s*[^\s&"']+/gi,
+  /bot\d+:[A-Za-z0-9_-]+/gi,
+  /(password|secret|token|authorization|cookie|pin|otp|admin_api_key|x-admin-key|order_token|telegram_bot_token)\s*[:=]\s*[^\s&"']+/gi,
 ];
 
 /**

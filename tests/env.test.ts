@@ -70,4 +70,15 @@ describe('Environment Configuration Validation', () => {
       }),
     ).toThrow(/ADMIN_API_KEY/i);
   });
+
+  it('accepts optional TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID variables', () => {
+    const parsed = parseEnv({
+      DATABASE_URL: 'postgresql://user:pass@localhost:5432/micro_shop_test',
+      TELEGRAM_BOT_TOKEN: '  123456:ABC-DEF  ',
+      TELEGRAM_CHAT_ID: '  100200300  ',
+    });
+
+    expect(parsed.TELEGRAM_BOT_TOKEN).toBe('123456:ABC-DEF');
+    expect(parsed.TELEGRAM_CHAT_ID).toBe('100200300');
+  });
 });
