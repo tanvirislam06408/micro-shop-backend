@@ -33,6 +33,16 @@ export const SERVER_PRODUCT_CATALOG: ReadonlyArray<CatalogProduct> = [
     inStock: true,
   },
   {
+    id: 'muse-ai',
+    name: 'Muse AI ভিডিও জেনারেটর',
+    description:
+      'Muse AI-এর সাহায্যে নিজের লেখা ও ছবি থেকে তৈরি করুন অসাধারণ AI ভিডিও। সিনেমাটিক ভিডিও, প্রোডাক্ট বিজ্ঞাপন, স্টোরিটেলিং এবং সোশ্যাল মিডিয়া কনটেন্ট তৈরির দারুণ AI টুল।',
+    defaultPlan: '২০ দিনের ওয়ারেন্টি (Personal Account)',
+    amountBdt: '399.00',
+    oldPriceBdt: '999.00',
+    inStock: true,
+  },
+  {
     id: 'chatgpt-plus-owner',
     name: 'ChatGPT Plus (Owner Account)',
     description:
