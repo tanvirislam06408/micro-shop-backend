@@ -312,7 +312,9 @@ export async function getOrderDetailsForAdmin(orderId: string) {
   return {
     id: order.id,
     customerId: order.customerId,
-    orderToken: order.orderToken,
+    orderToken: order.orderToken
+      ? `${order.orderToken.slice(0, 4)}...${order.orderToken.slice(-4)}`
+      : null,
     customerEmail: order.customerEmail,
     customerPhone: order.customerPhone,
     customerNote: order.customerNote,
@@ -363,6 +365,8 @@ export async function updateOrderStatusByAdmin(
 
   if (input.status === 'paid' && !existingOrder.paidAt) {
     updateData.paidAt = new Date();
+  } else if (input.status !== 'paid' && existingOrder.paidAt) {
+    updateData.paidAt = null;
   }
 
   // Update order in transaction
@@ -377,8 +381,22 @@ export async function updateOrderStatusByAdmin(
       },
     });
 
-    // If order was explicitly rejected or cancelled, mark pending payments as rejected
-    if (input.status === 'rejected') {
+    if (input.status === 'paid') {
+      // If order was explicitly marked paid, mark pending payments as verified
+      await tx.payment.updateMany({
+        where: {
+          orderId,
+          status: 'pending',
+        },
+        data: {
+          status: 'verified',
+          adminNote: input.adminNote || 'Verified via order status update',
+          verifiedBy: adminActor,
+          verifiedAt: new Date(),
+        },
+      });
+    } else if (input.status === 'rejected') {
+      // If order was explicitly rejected or cancelled, mark pending payments as rejected
       await tx.payment.updateMany({
         where: {
           orderId,

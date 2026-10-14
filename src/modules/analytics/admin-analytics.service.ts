@@ -105,12 +105,15 @@ export async function getAdminAnalytics(days = 14): Promise<AnalyticsResponse> {
       }),
     ]),
 
-    // Today's verified payments sum
+    // Today's verified payments sum (based on approval time, with fallback to createdAt)
     prisma.payment.aggregate({
       _sum: { amount: true },
       where: {
         status: 'verified',
-        createdAt: { gte: dhakaTodayStartUtc },
+        OR: [
+          { verifiedAt: { gte: dhakaTodayStartUtc } },
+          { verifiedAt: null, createdAt: { gte: dhakaTodayStartUtc } },
+        ],
       },
     }),
 
@@ -153,16 +156,27 @@ export async function getAdminAnalytics(days = 14): Promise<AnalyticsResponse> {
       },
     }),
 
-    // Verified payments within the window
+    // Verified payments within the window (based on approval time)
     prisma.payment.findMany({
       where: {
         status: 'verified',
-        createdAt: {
-          gte: new Date(Date.now() - days * 24 * 60 * 60 * 1000),
-        },
+        OR: [
+          {
+            verifiedAt: {
+              gte: new Date(Date.now() - days * 24 * 60 * 60 * 1000),
+            },
+          },
+          {
+            verifiedAt: null,
+            createdAt: {
+              gte: new Date(Date.now() - days * 24 * 60 * 60 * 1000),
+            },
+          },
+        ],
       },
       select: {
         amount: true,
+        verifiedAt: true,
         createdAt: true,
       },
     }),
@@ -192,7 +206,8 @@ export async function getAdminAnalytics(days = 14): Promise<AnalyticsResponse> {
   }
 
   for (const pay of allVerifiedPaymentsForTrends) {
-    const key = pay.createdAt.toISOString().slice(0, 10);
+    const targetDate = pay.verifiedAt || pay.createdAt;
+    const key = targetDate.toISOString().slice(0, 10);
     if (trendMap.has(key)) {
       trendMap.get(key)!.revenue += Number(pay.amount);
     }

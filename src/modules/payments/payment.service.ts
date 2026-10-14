@@ -309,13 +309,34 @@ export async function verifyPaymentByAdmin(
 
     let updatedOrder = null;
     if (existing.orderId) {
-      updatedOrder = await tx.order.update({
-        where: { id: existing.orderId },
-        data: {
-          status: isVerified ? 'paid' : 'rejected',
-          paidAt: isVerified ? now : null,
-        },
-      });
+      if (isVerified) {
+        updatedOrder = await tx.order.update({
+          where: { id: existing.orderId },
+          data: {
+            status: 'paid',
+            paidAt: now,
+          },
+        });
+      } else {
+        // If rejecting this payment attempt, check if order is already verified by another payment
+        const otherVerifiedPayment = await tx.payment.findFirst({
+          where: {
+            orderId: existing.orderId,
+            id: { not: paymentId },
+            status: 'verified',
+          },
+        });
+
+        if (!otherVerifiedPayment) {
+          updatedOrder = await tx.order.update({
+            where: { id: existing.orderId },
+            data: {
+              status: 'rejected',
+              paidAt: null,
+            },
+          });
+        }
+      }
     }
 
     return { updatedPayment, updatedOrder };

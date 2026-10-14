@@ -5,12 +5,15 @@ import { Prisma } from '../src/generated/prisma/client.js';
 
 const mockQueryRaw = vi.fn();
 const mockPaymentFindUnique = vi.fn();
+const mockPaymentFindFirst = vi.fn();
 const mockPaymentFindMany = vi.fn();
 const mockPaymentCreate = vi.fn();
 const mockPaymentUpdate = vi.fn();
+const mockPaymentUpdateMany = vi.fn();
 const mockOrderFindUnique = vi.fn();
 const mockOrderCreate = vi.fn();
 const mockOrderUpdate = vi.fn();
+const mockOrderUpdateMany = vi.fn();
 const mockProductFindUnique = vi.fn();
 const mockProductFindMany = vi.fn();
 const mockProductCreate = vi.fn();
@@ -23,14 +26,17 @@ vi.mock('../src/lib/prisma.js', () => {
     $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(client),
     payment: {
       findUnique: (...args: unknown[]) => mockPaymentFindUnique(...args),
+      findFirst: (...args: unknown[]) => mockPaymentFindFirst(...args),
       findMany: (...args: unknown[]) => mockPaymentFindMany(...args),
       create: (...args: unknown[]) => mockPaymentCreate(...args),
       update: (...args: unknown[]) => mockPaymentUpdate(...args),
+      updateMany: (...args: unknown[]) => mockPaymentUpdateMany(...args),
     },
     order: {
       findUnique: (...args: unknown[]) => mockOrderFindUnique(...args),
       create: (...args: unknown[]) => mockOrderCreate(...args),
       update: (...args: unknown[]) => mockOrderUpdate(...args),
+      updateMany: (...args: unknown[]) => mockOrderUpdateMany(...args),
     },
     product: {
       findUnique: (...args: unknown[]) => mockProductFindUnique(...args),
@@ -649,6 +655,125 @@ describe('API Endpoints, Security, Manual bKash Workflow & Admin Verification', 
 
       expect(res.status).toBe(409);
       expect(mockPaymentUpdate).not.toHaveBeenCalled();
+    });
+
+    it('rejects a duplicate payment without downgrading an order that already has another verified payment', async () => {
+      const now = new Date();
+      mockPaymentFindUnique.mockResolvedValueOnce({
+        id: 'pay_duplicate_2',
+        orderId: 'ord_already_paid',
+        status: 'pending',
+        order: {
+          id: 'ord_already_paid',
+          amount: new Prisma.Decimal('350.00'),
+          currency: 'BDT',
+          status: 'paid',
+          paidAt: now,
+          createdAt: now,
+        },
+      });
+
+      mockPaymentUpdate.mockResolvedValueOnce({
+        id: 'pay_duplicate_2',
+        orderId: 'ord_already_paid',
+        customerId: 'cust_already_paid',
+        amount: new Prisma.Decimal('350.00'),
+        currency: 'BDT',
+        transactionId: 'BKDUPLICATE1',
+        method: 'manual_bkash',
+        status: 'rejected',
+        rejectionReason: 'Duplicate transaction reference',
+        adminNote: null,
+        verifiedBy: 'admin',
+        verifiedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      // Another verified payment exists
+      mockPaymentFindFirst.mockResolvedValueOnce({
+        id: 'pay_original_1',
+        orderId: 'ord_already_paid',
+        status: 'verified',
+      });
+
+      const res = await request(app)
+        .patch('/api/v1/admin/payments/pay_duplicate_2/verify')
+        .set('X-Admin-Key', env.ADMIN_API_KEY)
+        .send({
+          status: 'rejected',
+          rejectionReason: 'Duplicate transaction reference',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe('rejected');
+      expect(mockOrderUpdate).not.toHaveBeenCalled();
+    });
+
+    it('masks customer orderToken in GET /api/v1/admin/orders/:id', async () => {
+      const now = new Date();
+      mockOrderFindUnique.mockResolvedValueOnce({
+        id: 'ord_secret_test',
+        customerId: 'cust_999',
+        orderToken: 'secret_token_123456789_abcdef',
+        customerEmail: 'customer@example.com',
+        customerPhone: '01711223344',
+        customerNote: null,
+        productId: 'chatgpt-plus',
+        productName: 'ChatGPT Plus',
+        planName: '1 Month',
+        amount: new Prisma.Decimal('350.00'),
+        currency: 'BDT',
+        paymentMethod: 'manual_bkash',
+        status: 'paid',
+        paidAt: now,
+        createdAt: now,
+        updatedAt: now,
+        payments: [],
+      });
+
+      const res = await request(app)
+        .get('/api/v1/admin/orders/ord_secret_test')
+        .set('X-Admin-Key', env.ADMIN_API_KEY);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.orderToken).not.toBe('secret_token_123456789_abcdef');
+      expect(res.body.data.orderToken).toBe('secr...cdef');
+    });
+
+    it('synchronizes pending payments to verified when admin updates order status to paid', async () => {
+      const now = new Date();
+      mockOrderFindUnique.mockResolvedValueOnce({
+        id: 'ord_sync_1',
+        status: 'pending_payment',
+        paidAt: null,
+        payments: [{ id: 'pay_sync_1', status: 'pending' }],
+      });
+
+      mockOrderUpdate.mockResolvedValueOnce({
+        id: 'ord_sync_1',
+        status: 'paid',
+        paidAt: now,
+        updatedAt: now,
+        payments: [],
+      });
+
+      const res = await request(app)
+        .patch('/api/v1/admin/orders/ord_sync_1/status')
+        .set('X-Admin-Key', env.ADMIN_API_KEY)
+        .send({
+          status: 'paid',
+          adminNote: 'Manually verified via bank bank statement',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe('paid');
+      expect(mockPaymentUpdateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { orderId: 'ord_sync_1', status: 'pending' },
+          data: expect.objectContaining({ status: 'verified' }),
+        }),
+      );
     });
   });
 
