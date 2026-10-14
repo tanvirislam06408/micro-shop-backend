@@ -6,7 +6,8 @@ import {
   type ResolvedProductPricing,
 } from '../../config/catalog.js';
 import { ApiError } from '../../utils/api-error.js';
-import type { UpdateProductBody } from './product.validation.js';
+import type { UpdateProductBody, CreateProductBody } from './product.validation.js';
+
 
 export interface ProductDto {
   id: string;
@@ -230,3 +231,80 @@ export async function updateProductByAdmin(
 
   return formatProductRecord(updated);
 }
+
+export async function createProductByAdmin(
+  input: CreateProductBody,
+): Promise<ProductDto> {
+  if (!prisma.product || typeof prisma.product.findUnique !== 'function') {
+    throw ApiError.internal('Product repository is unavailable');
+  }
+
+  const existing = await prisma.product.findUnique({
+    where: { id: input.id },
+  });
+
+  if (existing) {
+    throw ApiError.conflict(`A product with slug '${input.id}' already exists`);
+  }
+
+  const created = await prisma.product.create({
+    data: {
+      id: input.id,
+      name: input.name,
+      description: input.description,
+      defaultPlan: input.defaultPlan,
+      amountBdt: new Prisma.Decimal(input.amountBdt.toFixed(2)),
+      oldPriceBdt:
+        input.oldPriceBdt !== undefined && input.oldPriceBdt !== null
+          ? new Prisma.Decimal(input.oldPriceBdt.toFixed(2))
+          : null,
+      inStock: input.inStock ?? true,
+    },
+  });
+
+  return formatProductRecord(created);
+}
+
+export async function deleteProductByAdmin(productId: string) {
+  if (!prisma.product || typeof prisma.product.findUnique !== 'function') {
+    throw ApiError.internal('Product repository is unavailable');
+  }
+
+  const product = await prisma.product.findUnique({
+    where: { id: productId },
+  });
+
+  if (!product) {
+    throw ApiError.notFound(`Product not found: ${productId}`);
+  }
+
+  // Check if any order references this product
+  const ordersCount = await prisma.order.count({
+    where: { productId },
+  });
+
+  if (ordersCount > 0) {
+    // Soft-delete to preserve all historical order snapshots and business reports
+    const deactivated = await prisma.product.update({
+      where: { id: productId },
+      data: { inStock: false },
+    });
+    return {
+      softDeleted: true,
+      message: `Product has ${ordersCount} order(s) in history. It has been safely deactivated (marked out of stock) to preserve historical reporting.`,
+      product: formatProductRecord(deactivated),
+    };
+  }
+
+  // If no orders exist, hard delete safely
+  await prisma.product.delete({
+    where: { id: productId },
+  });
+
+  return {
+    softDeleted: false,
+    message: `Product '${product.name}' was permanently removed.`,
+    product: formatProductRecord(product),
+  };
+}
+

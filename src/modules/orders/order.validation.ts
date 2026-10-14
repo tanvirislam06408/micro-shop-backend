@@ -46,5 +46,25 @@ export const getOrderParamsSchema = z.object({
   id: z.string().trim().min(1, 'Order ID is required'),
 });
 
+export const adminListOrdersQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(20),
+  search: z.string().trim().optional(),
+  status: z.enum(['pending_payment', 'payment_submitted', 'paid', 'rejected']).optional(),
+  paymentStatus: z.enum(['pending', 'verified', 'rejected']).optional(),
+  sortBy: z.enum(['createdAt', 'amount']).default('createdAt'),
+  sortOrder: z.enum(['asc', 'desc']).default('desc'),
+});
+
+export const adminUpdateOrderStatusSchema = z
+  .object({
+    status: z.enum(['pending_payment', 'payment_submitted', 'paid', 'rejected']),
+    adminNote: z.string().trim().max(500).optional(),
+  })
+  .strict();
+
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 export type GetOrderParams = z.infer<typeof getOrderParamsSchema>;
+export type AdminListOrdersQuery = z.infer<typeof adminListOrdersQuerySchema>;
+export type AdminUpdateOrderStatusInput = z.infer<typeof adminUpdateOrderStatusSchema>;
+

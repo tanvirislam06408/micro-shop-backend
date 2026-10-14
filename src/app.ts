@@ -12,8 +12,11 @@ import { paymentRoutes } from './modules/payments/payment.routes.js';
 import { adminPaymentRoutes } from './modules/payments/admin-payment.routes.js';
 import { productRoutes } from './modules/products/product.routes.js';
 import { adminProductRoutes } from './modules/products/admin-product.routes.js';
+import { adminOrderRoutes } from './modules/orders/admin-order.routes.js';
+import { adminAnalyticsRoutes } from './modules/analytics/admin-analytics.routes.js';
 
 const app: Express = express();
+
 
 // Trust first proxy (required for express-rate-limit behind Vercel / reverse proxies)
 app.set('trust proxy', 1);
@@ -61,8 +64,11 @@ app.use('/api/v1/orders', orderRoutes);
 app.use('/api/v1/payments', paymentRoutes);
 app.use('/api/v1/admin/payments', adminPaymentRoutes);
 app.use('/api/v1/admin/products', adminProductRoutes);
+app.use('/api/v1/admin/orders', adminOrderRoutes);
+app.use('/api/v1/admin/analytics', adminAnalyticsRoutes);
 
 // --- 404 and error handling ---
+
 app.use(notFound);
 app.use(errorHandler);
 
