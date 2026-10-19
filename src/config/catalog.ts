@@ -43,6 +43,16 @@ export const SERVER_PRODUCT_CATALOG: ReadonlyArray<CatalogProduct> = [
     inStock: true,
   },
   {
+    id: 'lovable-pro-lite',
+    name: 'Lovable Pro Lite',
+    description:
+      'Build apps and websites by chatting with AI. 12 months validity + 300 credits, redeem on your own account, 2 months warranty.',
+    defaultPlan: '12 Months Validity',
+    amountBdt: '999.00',
+    oldPriceBdt: '2500.00',
+    inStock: true,
+  },
+  {
     id: 'chatgpt-plus-owner',
     name: 'ChatGPT Plus (Owner Account)',
     description:
